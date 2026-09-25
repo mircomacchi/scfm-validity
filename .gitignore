@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+data/
+results/*.h5ad
+*.h5ad
+.DS_Store
