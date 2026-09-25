@@ -77,7 +77,14 @@ def embed_geneformer(
         device = "mps" if torch.backends.mps.is_available() else "cpu"
     config = GeneformerConfig(model_name=model_name, batch_size=batch_size, device=device)
     model = Geneformer(configurer=config)
-    dataset = model.process_data(adata, gene_names="ensembl_id")
+    # Keep one column per in-vocabulary Ensembl ID. With duplicates, helical 3.1.3
+    # takes a gene-collapsing branch that drops var["ensembl_id"] and then fails.
+    ids = adata.var["ensembl_id"].astype(str).str.upper()
+    keep = ids.isin(model.tk.gene_token_dict.keys()).to_numpy() & ~ids.duplicated().to_numpy()
+    sub = adata[:, keep].copy()
+    sub.var["ensembl_id"] = ids[keep].to_numpy()
+    log.info("Geneformer vocabulary covers %d of %d genes", keep.sum(), adata.n_vars)
+    dataset = model.process_data(sub, gene_names="ensembl_id")
     Z = np.asarray(model.get_embeddings(dataset))
     key = "X_geneformer"
     adata.obsm[key] = Z

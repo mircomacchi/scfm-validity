@@ -78,7 +78,7 @@ def embed_cmd(
             embed.embed_geneformer(adata, model_name=geneformer_model)
         else:
             raise typer.BadParameter(f"Unknown method {m!r}; choose from {list(EMBEDDERS)}")
-    adata.write_h5ad(h5ad, compression="gzip")
+        adata.write_h5ad(h5ad, compression="gzip")  # save after each method
 
 
 @app.command()
