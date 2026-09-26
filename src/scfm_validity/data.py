@@ -73,3 +73,29 @@ def load_subsample(
     for col in sub.obs.select_dtypes("category"):
         sub.obs[col] = sub.obs[col].cat.remove_unused_categories()
     return sub
+
+
+def read_counts_lean(path: str | Path) -> ad.AnnData:
+    """Read only counts, gene IDs and cell names: no obs metadata, obsm or uns.
+
+    For steps that need the matrix alone, this keeps peak memory near the size of X.
+    """
+    import h5py
+    from anndata.io import read_elem
+
+    with h5py.File(path, "r") as f:
+        X = read_elem(f["X"])
+        var = read_elem(f["var"])
+        obs_names = read_elem(f["obs"][f["obs"].attrs["_index"]])
+    return ad.AnnData(X=X, obs=pd.DataFrame(index=obs_names), var=var)
+
+
+def write_obsm(path: str | Path, key: str, Z: np.ndarray) -> None:
+    """Add or replace one embedding in an h5ad file without rewriting the rest."""
+    import h5py
+    from anndata.io import write_elem
+
+    with h5py.File(path, "a") as f:
+        if key in f["obsm"]:
+            del f["obsm"][key]
+        write_elem(f["obsm"], key, np.asarray(Z, dtype=np.float32))

@@ -8,10 +8,13 @@ and returns the key it used.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import scanpy as sc
+import scipy.sparse as sp
 
 log = logging.getLogger(__name__)
 
@@ -60,16 +63,29 @@ def embed_scvi(
 def embed_geneformer(
     adata: ad.AnnData,
     model_name: str = "gf-12L-38M-i4096",
-    batch_size: int = 16,
+    batch_size: int = 4,
     device: str | None = None,
-) -> str:
+    chunk_size: int = 1000,
+    checkpoint_dir: str | Path | None = None,
+    max_chunks: int | None = None,
+) -> str | None:
     """Zero-shot Geneformer cell embeddings via `helical`.
 
     Geneformer ranks each cell's genes by expression (normalised by each gene's
     median across its pretraining corpus) and reads the rank list with a
     transformer. No fine-tuning here: the point is what the pretrained model
     already encodes.
+
+    Cells are tokenised and embedded `chunk_size` at a time, so peak memory holds
+    one chunk of tokens rather than the whole dataset. With `checkpoint_dir`, each
+    chunk is saved as it finishes and a rerun skips the chunks already on disk.
+    With `max_chunks`, stop after computing that many new chunks and return None
+    if the embedding is still incomplete. helical/PyTorch do not release all MPS
+    memory between chunks (footprint reached 40 GB over 11 chunks on a 16 GB Mac),
+    so long runs should compute one chunk per process: see `hpc/geneformer_local.sh`.
     """
+    import gc
+
     import torch
     from helical.models.geneformer import Geneformer, GeneformerConfig
 
@@ -77,16 +93,43 @@ def embed_geneformer(
         device = "mps" if torch.backends.mps.is_available() else "cpu"
     config = GeneformerConfig(model_name=model_name, batch_size=batch_size, device=device)
     model = Geneformer(configurer=config)
-    # Keep one column per in-vocabulary Ensembl ID. With duplicates, helical 3.1.3
-    # takes a gene-collapsing branch that drops var["ensembl_id"] and then fails.
+    # Keep one column per in-vocabulary Ensembl ID and turn off helical's own gene
+    # collapsing: in helical 3.1.3 that branch drops var["ensembl_id"] and then fails.
+    model.tk.collapse_gene_ids = False
     ids = adata.var["ensembl_id"].astype(str).str.upper()
     keep = ids.isin(model.tk.gene_token_dict.keys()).to_numpy() & ~ids.duplicated().to_numpy()
-    sub = adata[:, keep].copy()
-    sub.var["ensembl_id"] = ids[keep].to_numpy()
+    X = sp.csr_matrix(adata.X)[:, np.flatnonzero(keep)]
+    var = pd.DataFrame({"ensembl_id": ids[keep].to_numpy()}, index=ids[keep].to_numpy())
     log.info("Geneformer vocabulary covers %d of %d genes", keep.sum(), adata.n_vars)
-    dataset = model.process_data(sub, gene_names="ensembl_id")
-    Z = np.asarray(model.get_embeddings(dataset))
+
+    ckpt = Path(checkpoint_dir) if checkpoint_dir else None
+    if ckpt:
+        ckpt.mkdir(parents=True, exist_ok=True)
+    parts, computed = [], 0
+    for start in range(0, adata.n_obs, chunk_size):
+        stop = min(start + chunk_size, adata.n_obs)
+        done = ckpt / f"{model_name}_{start:07d}_{stop:07d}.npy" if ckpt else None
+        if done and done.exists():
+            parts.append(np.load(done))
+            continue
+        if max_chunks is not None and computed >= max_chunks:
+            log.info("Stopping after %d new chunk(s); rerun to continue", computed)
+            return None
+        chunk = ad.AnnData(
+            X=X[start:stop], obs=pd.DataFrame(index=adata.obs_names[start:stop]), var=var
+        )
+        dataset = model.process_data(chunk, gene_names="ensembl_id")
+        parts.append(np.asarray(model.get_embeddings(dataset), dtype=np.float32))
+        if done:
+            np.save(done, parts[-1])
+        computed += 1
+        del chunk, dataset
+        gc.collect()
+        if device == "mps":
+            torch.mps.empty_cache()
+        log.info("Geneformer: %d / %d cells", stop, adata.n_obs)
+
     key = "X_geneformer"
-    adata.obsm[key] = Z
-    log.info("Geneformer %s on %s: %s", model_name, device, Z.shape)
+    adata.obsm[key] = np.vstack(parts)
+    log.info("Geneformer %s on %s: %s", model_name, device, adata.obsm[key].shape)
     return key

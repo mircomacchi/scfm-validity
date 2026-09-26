@@ -63,12 +63,32 @@ def embed_cmd(
     methods: str = typer.Option("pca,scvi,geneformer", help="Comma-separated."),
     max_epochs: int = 100,
     geneformer_model: str = "gf-12L-38M-i4096",
+    max_chunks: int = typer.Option(None, help="Geneformer: new chunks per process."),
+    geneformer_device: str = typer.Option(
+        None, help="cpu, mps or cuda. On a 16 GB Mac, cpu is faster: MPS thrashes memory."
+    ),
     seed: int = 0,
 ) -> None:
     """Add embeddings to the h5ad in place."""
+    methods_list = methods.split(",")
+    if methods_list == ["geneformer"]:
+        # Lean path: Geneformer needs the counts only, and the result is written
+        # straight into obsm, so the full object is never held in memory.
+        lean = data.read_counts_lean(h5ad)
+        key = embed.embed_geneformer(
+            lean,
+            model_name=geneformer_model,
+            device=geneformer_device,
+            checkpoint_dir=h5ad.parent / "geneformer_chunks",
+            max_chunks=max_chunks,
+        )
+        if key is None:
+            raise typer.Exit(code=3)  # incomplete: the driver script reruns
+        data.write_obsm(h5ad, key, lean.obsm[key])
+        return
     adata = ad.read_h5ad(h5ad)
     batch_key = adata.uns["prepare"]["batch_key"]
-    for m in methods.split(","):
+    for m in methods_list:
         log.info("Embedding with %s", m)
         if m == "pca":
             embed.embed_pca(adata, seed=seed)

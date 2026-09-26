@@ -64,11 +64,14 @@ def artefact_bars(report: pd.DataFrame, out: str | Path) -> Path:
     for ax, metric, title in zip(axes, metrics, titles, strict=True):
         data = report.pivot(index="embedding", columns="artefact", values=metric)
         data = data.dropna(axis=1, how="all")
-        data.plot.bar(ax=ax, color=[ARTEFACT_COLOURS[c] for c in data.columns], rot=0)
+        data.plot.bar(ax=ax, color=[ARTEFACT_COLOURS[c] for c in data.columns], rot=0, legend=False)
         ax.set_title(title, fontsize=9)
         ax.set_xlabel("")
         ax.set_ylim(0, 1)
-    fig.tight_layout()
+    kinds = ("doublet", "ambient")
+    handles = [plt.Rectangle((0, 0), 1, 1, color=ARTEFACT_COLOURS[k]) for k in kinds]
+    fig.legend(handles, ["doublet", "ambient"], loc="upper center", ncol=2, frameon=False)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     out = Path(out)
     fig.savefig(out, dpi=150)
     plt.close(fig)
