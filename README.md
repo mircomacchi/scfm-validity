@@ -93,7 +93,7 @@ compact groups of their own.
 The scib scores of the fine-tuned embedding (total 0.597) are not comparable with the other
 embeddings: bio conservation uses the same cell-type labels the model was trained on.
 
-Reproduce: `bash hpc/finetune_local.sh data/prepared.h5ad` (about 2 hours 15 minutes on an M4 CPU; the Geneformer steps stay under 4 GB, the scib evaluation peaks near 14 GB).
+Reproduce: `bash hpc/finetune_local.sh data/prepared.h5ad` (about 2 hours 15 minutes on an M4 CPU; a 64-cell fine-tuning benchmark peaked at 3.7 GB and the scib evaluation at 13.8 GB; the full run was not profiled).
 
 ## Metrics
 
