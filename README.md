@@ -61,6 +61,40 @@ ambient contamination uses the pooled profile of each batch, since empty droplet
 available. Geneformer is used zero-shot; fine-tuning could change the picture. Treat the numbers
 as a case study, not a benchmark.
 
+## Fine-tuning: better classifier, more phantom doublets
+
+`gf-6L-10M-i2048` (the original 6-layer Geneformer) fine-tuned for cell-type classification, first 4
+of 6 layers frozen, 3 epochs, CPU. **Split by study:** trained on 5,108 cells from Micheli et al. and
+Tabula Sapiens, scored on 2,171 cells of He et al. 2020, a study the model never saw. The baseline is
+a logistic regression on the zero-shot embedding of the same model.
+
+| Held-out study (7 classes present) | Accuracy | Macro-F1 | Macro-F1 without MSC |
+|---|---|---|---|
+| Zero-shot + linear probe | 0.801 | 0.800 | 0.928 |
+| Fine-tuned | **0.978** | **0.968** | **0.965** |
+
+**Most of the gap is a naming convention, not biology.** Micheli et al. label the muscle stromal cells
+"fibroblast"; Tabula Sapiens and He et al. label them "mesenchymal stem cell" (MSC). In muscle these
+are most likely the same fibro-adipogenic progenitors. The probe maps He's MSCs to fibroblast and
+adipocyte (F1 0.03); the fine-tuned model learned the Tabula Sapiens convention (F1 0.99). Without
+that class, fine-tuning still helps (0.965 vs 0.928), mostly on vein endothelial cells (F1 0.91 vs
+0.72). Per-class scores: `results/finetune_per_class.csv`.
+
+| Doublets | Phantom clusters | Doublets in phantom clusters | Doublets near a parent type |
+|---|---|---|---|
+| 6L zero-shot | 1 (137 cells, 69% doublets) | 9.3% | 78.9% |
+| 6L fine-tuned | 2 (268 and 99 cells) | **23.4%** | 79.0% |
+
+**Fine-tuning on cell types made doublets look more like cell types.** The fine-tuned embedding forms
+two doublet-dominated clusters, stromal + endothelial and stromal + immune pairs, against one before.
+A classifier trained to separate labelled types sharpens the space, and heterotypic doublets become
+compact groups of their own.
+
+The scib scores of the fine-tuned embedding (total 0.597) are not comparable with the other
+embeddings: bio conservation uses the same cell-type labels the model was trained on.
+
+Reproduce: `bash hpc/finetune_local.sh data/prepared.h5ad` (about 2 hours 15 minutes on an M4 CPU; the Geneformer steps stay under 4 GB, the scib evaluation peaks near 14 GB).
+
 ## Metrics
 
 | Metric | Question | Better |

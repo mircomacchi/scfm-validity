@@ -16,7 +16,13 @@ app = typer.Typer(add_completion=False, help=__doc__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("scfm_validity")
 
-EMBEDDERS = {"pca": "X_pca", "scvi": "X_scvi", "geneformer": "X_geneformer"}
+EMBEDDERS = {
+    "pca": "X_pca",
+    "scvi": "X_scvi",
+    "geneformer": "X_geneformer",
+    "geneformer6l": "X_gf6l_zeroshot",
+    "geneformer6l_ft": "X_gf6l_finetuned",
+}
 
 
 @app.command()
@@ -58,6 +64,10 @@ def embed_cmd(
     max_epochs: int = 100,
     geneformer_model: str = "gf-12L-38M-i4096",
     max_chunks: int = typer.Option(None, help="Geneformer: new chunks per process."),
+    geneformer_weights: Path = typer.Option(
+        None, help="Fine-tuned weights directory from `finetune`; uses its backbone."
+    ),
+    geneformer_key: str = typer.Option("X_geneformer", help="obsm key for the embedding."),
     geneformer_device: str = typer.Option(
         None, help="cpu, mps or cuda. On a 16 GB Mac, cpu is faster: MPS thrashes memory."
     ),
@@ -72,6 +82,8 @@ def embed_cmd(
         key = embed.embed_geneformer(
             lean,
             model_name=geneformer_model,
+            weights=geneformer_weights,
+            key=geneformer_key,
             device=geneformer_device,
             checkpoint_dir=h5ad.parent / "geneformer_chunks",
             max_chunks=max_chunks,
@@ -122,6 +134,51 @@ def evaluate(
 
     plots.artefact_bars(report, outdir / "artefact_metrics.png")
     plots.umap_grid(adata, keys, label_key, outdir / "umap_grid.png", seed)
+
+
+@app.command()
+def finetune(
+    h5ad: Path,
+    out_dir: Path = typer.Argument(..., help="Where to write model.pt and the report."),
+    holdout_batch: str = "He et al. 2020",
+    model_name: str = "gf-6L-10M-i2048",
+    epochs: int = 3,
+    freeze_layers: int = 4,
+    lr: float = 1e-4,
+    n_train: int = 5000,
+    baseline_key: str = typer.Option(
+        "X_gf6l_zeroshot", help="Zero-shot embedding for the linear-probe baseline."
+    ),
+    seed: int = 0,
+) -> None:
+    """Fine-tune Geneformer on cell types, split by study; compare with a linear probe."""
+    import numpy as np
+
+    from scfm_validity import finetune as ft
+
+    adata = ad.read_h5ad(h5ad)
+    prep = adata.uns["prepare"]
+    report = ft.finetune_geneformer(
+        adata,
+        out_dir,
+        prep["label_key"],
+        prep["batch_key"],
+        holdout_batch,
+        model_name,
+        epochs,
+        freeze_layers,
+        lr,
+        n_train=n_train,
+        seed=seed,
+    )
+    if baseline_key in adata.obsm:
+        y = adata.obs[prep["label_key"]].astype(str).to_numpy()
+        train, holdout = np.load(out_dir / "train_idx.npy"), np.load(out_dir / "holdout_idx.npy")
+        report["zeroshot_linear_probe"] = ft.linear_probe(
+            np.asarray(adata.obsm[baseline_key]), y, train, holdout
+        )
+        (out_dir / ft.META).write_text(json.dumps(report, indent=2))
+    log.info("\n%s", json.dumps({k: report.get(k) for k in ("finetuned", "zeroshot_linear_probe")}))
 
 
 @app.command()

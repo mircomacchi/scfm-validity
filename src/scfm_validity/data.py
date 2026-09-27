@@ -22,6 +22,8 @@ def stratified_indices(
     """Sample about `n_cells` positions, keeping label proportions but at least
     `min_per_label` cells per label (or all of them, if fewer exist)."""
     rng = np.random.default_rng(seed)
+    if len(labels) == 0:
+        raise ValueError("No cells to sample from")
     labels = labels.astype(str).to_numpy()
     uniq, counts = np.unique(labels, return_counts=True)
     frac = min(1.0, n_cells / len(labels))

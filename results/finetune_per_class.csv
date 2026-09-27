@@ -1,0 +1,8 @@
+,F1 fine-tuned,support,F1 probe
+capillary endothelial cell,0.967,354.0,0.935
+lymphocyte,0.968,208.0,0.97
+macrophage,0.969,81.0,0.975
+mesenchymal stem cell,0.989,353.0,0.028
+mural cell,0.985,230.0,0.987
+skeletal muscle satellite stem cell,0.992,874.0,0.984
+vein endothelial cell,0.908,71.0,0.719

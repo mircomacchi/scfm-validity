@@ -60,6 +60,20 @@ def embed_scvi(
     return "X_scvi"
 
 
+def vocab_subset(adata: ad.AnnData, gene_token_dict: dict) -> tuple[sp.csr_matrix, pd.DataFrame]:
+    """Counts restricted to one column per in-vocabulary Ensembl ID.
+
+    Used with `tk.collapse_gene_ids = False`: helical 3.1.3's own collapsing drops
+    var["ensembl_id"] and then fails (helicalAI/helical#433).
+    """
+    ids = adata.var["ensembl_id"].astype(str).str.upper()
+    keep = ids.isin(gene_token_dict.keys()).to_numpy() & ~ids.duplicated().to_numpy()
+    X = sp.csr_matrix(adata.X)[:, np.flatnonzero(keep)]
+    var = pd.DataFrame({"ensembl_id": ids[keep].to_numpy()}, index=ids[keep].to_numpy())
+    log.info("Geneformer vocabulary covers %d of %d genes", keep.sum(), adata.n_vars)
+    return X, var
+
+
 def embed_geneformer(
     adata: ad.AnnData,
     model_name: str = "gf-12L-38M-i4096",
@@ -68,13 +82,15 @@ def embed_geneformer(
     chunk_size: int = 1000,
     checkpoint_dir: str | Path | None = None,
     max_chunks: int | None = None,
+    weights: str | Path | None = None,
+    key: str = "X_geneformer",
 ) -> str | None:
-    """Zero-shot Geneformer cell embeddings via `helical`.
+    """Geneformer cell embeddings via `helical`, zero-shot or from fine-tuned weights.
 
     Geneformer ranks each cell's genes by expression (normalised by each gene's
     median across its pretraining corpus) and reads the rank list with a
-    transformer. No fine-tuning here: the point is what the pretrained model
-    already encodes.
+    transformer. With `weights` (a directory written by `finetune.finetune_geneformer`)
+    the fine-tuned backbone is used instead of the pretrained one.
 
     Cells are tokenised and embedded `chunk_size` at a time, so peak memory holds
     one chunk of tokens rather than the whole dataset. With `checkpoint_dir`, each
@@ -91,16 +107,16 @@ def embed_geneformer(
 
     if device is None:
         device = "mps" if torch.backends.mps.is_available() else "cpu"
-    config = GeneformerConfig(model_name=model_name, batch_size=batch_size, device=device)
-    model = Geneformer(configurer=config)
-    # Keep one column per in-vocabulary Ensembl ID and turn off helical's own gene
-    # collapsing: in helical 3.1.3 that branch drops var["ensembl_id"] and then fails.
+    if weights is not None:
+        from scfm_validity.finetune import load_finetuned
+
+        model = load_finetuned(weights, device=device, batch_size=batch_size)
+        model_name = model.config["model_name"] if "model_name" in model.config else model_name
+    else:
+        config = GeneformerConfig(model_name=model_name, batch_size=batch_size, device=device)
+        model = Geneformer(configurer=config)
     model.tk.collapse_gene_ids = False
-    ids = adata.var["ensembl_id"].astype(str).str.upper()
-    keep = ids.isin(model.tk.gene_token_dict.keys()).to_numpy() & ~ids.duplicated().to_numpy()
-    X = sp.csr_matrix(adata.X)[:, np.flatnonzero(keep)]
-    var = pd.DataFrame({"ensembl_id": ids[keep].to_numpy()}, index=ids[keep].to_numpy())
-    log.info("Geneformer vocabulary covers %d of %d genes", keep.sum(), adata.n_vars)
+    X, var = vocab_subset(adata, model.tk.gene_token_dict)
 
     ckpt = Path(checkpoint_dir) if checkpoint_dir else None
     if ckpt:
@@ -108,7 +124,7 @@ def embed_geneformer(
     parts, computed = [], 0
     for start in range(0, adata.n_obs, chunk_size):
         stop = min(start + chunk_size, adata.n_obs)
-        done = ckpt / f"{model_name}_{start:07d}_{stop:07d}.npy" if ckpt else None
+        done = ckpt / f"{key}_{start:07d}_{stop:07d}.npy" if ckpt else None
         if done and done.exists():
             parts.append(np.load(done))
             continue
@@ -127,9 +143,8 @@ def embed_geneformer(
         gc.collect()
         if device == "mps":
             torch.mps.empty_cache()
-        log.info("Geneformer: %d / %d cells", stop, adata.n_obs)
+        log.info("%s: %d / %d cells", key, stop, adata.n_obs)
 
-    key = "X_geneformer"
     adata.obsm[key] = np.vstack(parts)
-    log.info("Geneformer %s on %s: %s", model_name, device, adata.obsm[key].shape)
+    log.info("%s (%s on %s): %s", key, model_name, device, adata.obsm[key].shape)
     return key

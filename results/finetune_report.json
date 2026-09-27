@@ -1,0 +1,36 @@
+{
+  "model_name": "gf-6L-10M-i2048",
+  "holdout_batch": "He et al. 2020",
+  "n_train": 5108,
+  "n_holdout": 2171,
+  "classes": [
+    "adipocyte",
+    "capillary endothelial cell",
+    "cell of skeletal muscle",
+    "endothelial cell of artery",
+    "endothelial cell of lymphatic vessel",
+    "fast muscle cell",
+    "fibroblast",
+    "lymphocyte",
+    "macrophage",
+    "mesenchymal stem cell",
+    "mural cell",
+    "pericyte",
+    "skeletal muscle satellite stem cell",
+    "tendon cell",
+    "vein endothelial cell"
+  ],
+  "epochs": 3,
+  "freeze_layers": 4,
+  "lr": 0.0001,
+  "finetuned": {
+    "accuracy": 0.9783509903270382,
+    "macro_f1": 0.9680995354521225,
+    "n_classes_scored": 7
+  },
+  "zeroshot_linear_probe": {
+    "accuracy": 0.8005527406725012,
+    "macro_f1": 0.7997573312611131,
+    "n_classes_scored": 7
+  }
+}
