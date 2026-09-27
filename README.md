@@ -86,10 +86,28 @@ scfm-validity evaluate data/prepared.h5ad results/
 
 Outputs: `results/artefact_metrics.parquet`, `results/scib_metrics.parquet` and the two figures.
 
+## HTTP API
+
+```bash
+pip install -e ".[api,scvi]"
+scfm-validity serve --port 8000            # interactive docs at http://localhost:8000/docs
+
+curl -F file=@cells.h5ad -F methods=pca,scvi -F batch_key=donor_id localhost:8000/jobs
+# {"job_id": "2f49...", "status": "queued"}
+curl localhost:8000/jobs/2f49...
+# {"status": "done", "result": [{"embedding": "X_pca", "artefact": "doublet", ...}, ...]}
+```
+
+`POST /jobs` streams the upload to disk (2 GB cap), validates the parameters and returns `202` at
+once; one worker thread runs the job so a large upload cannot exhaust memory, and a failed job
+reports its error instead of crashing the server. PCA and scVI only: Geneformer needs the batch
+path. The job store is in memory, so a multi-replica deployment would swap it for a queue and a
+database. In Docker: `docker run -p 8000:8000 scfm-validity serve --host 0.0.0.0`.
+
 ## Engineering notes
 
-- **Tests.** `pytest` runs on a synthetic 600-cell dataset, including an end-to-end CLI run, so CI
-  needs no download. GitHub Actions runs ruff and pytest on Python 3.11 and 3.12, then builds the
+- **Tests.** `pytest` runs on a synthetic 600-cell dataset, including an end-to-end CLI run and
+  the API (job lifecycle, validation, failure reporting), so CI needs no download. GitHub Actions runs ruff and pytest on Python 3.11 and 3.12, then builds the
   Docker image.
 - **Memory on a 16 GB laptop.** Geneformer on Apple MPS thrashed memory: 200 cells took 1,325 s with
   an 18.5 GB footprint, against 235 s and 6.0 GB on CPU. Memory also grew across chunks within one

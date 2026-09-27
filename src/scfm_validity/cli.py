@@ -8,10 +8,9 @@ from pathlib import Path
 
 import anndata as ad
 import pandas as pd
-import scanpy as sc
 import typer
 
-from scfm_validity import artefacts, data, embed, metrics, plots
+from scfm_validity import data, embed, metrics, pipeline, plots
 
 app = typer.Typer(add_completion=False, help=__doc__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -35,23 +34,18 @@ def prepare(
     seed: int = 0,
 ) -> None:
     """Subsample, filter low-quality cells and inject labelled artefacts."""
-    adata = data.load_subsample(
-        source, n_cells, label_key, seed=seed, obs_filter=json.loads(obs_filter)
+    full = pipeline.prepare_adata(
+        source,
+        n_cells,
+        label_key,
+        batch_key,
+        min_genes,
+        doublet_frac,
+        ambient_frac,
+        contamination,
+        json.loads(obs_filter),
+        seed,
     )
-    sc.pp.filter_cells(adata, min_genes=min_genes)
-    log.info("Real cells after QC: %d", adata.n_obs)
-    full = artefacts.inject_artefacts(
-        adata, doublet_frac, ambient_frac, contamination, label_key, batch_key, seed
-    )
-    full.uns["prepare"] = {
-        "source": str(source),
-        "label_key": label_key,
-        "batch_key": batch_key,
-        "seed": seed,
-        "doublet_frac": doublet_frac,
-        "ambient_frac": ambient_frac,
-        "contamination": contamination,
-    }
     out.parent.mkdir(parents=True, exist_ok=True)
     full.write_h5ad(out, compression="gzip")
     log.info("Wrote %s: %s", out, full.obs["artefact"].value_counts().to_dict())
@@ -128,6 +122,14 @@ def evaluate(
 
     plots.artefact_bars(report, outdir / "artefact_metrics.png")
     plots.umap_grid(adata, keys, label_key, outdir / "umap_grid.png", seed)
+
+
+@app.command()
+def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Start the HTTP API (needs the [api] extra). Docs at /docs."""
+    import uvicorn
+
+    uvicorn.run("scfm_validity.api:app", host=host, port=port)
 
 
 if __name__ == "__main__":

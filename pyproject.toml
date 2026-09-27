@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scfm-validity"
-version = "0.1.0"
+version = "0.2.0"
 description = "Do single-cell foundation model embeddings capture biology or artefacts? A validity harness for scRNA-seq embeddings."
 readme = "README.md"
 license = "MIT"
@@ -26,7 +26,8 @@ dependencies = [
 [project.optional-dependencies]
 scvi = ["scvi-tools>=1.2"]
 fm = ["helical"]
-dev = ["pytest>=8", "pytest-cov", "ruff"]
+api = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart"]
+dev = ["pytest>=8", "pytest-cov", "ruff", "httpx"]
 
 [project.scripts]
 scfm-validity = "scfm_validity.cli:app"
