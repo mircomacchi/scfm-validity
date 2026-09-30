@@ -80,15 +80,23 @@ adipocyte (F1 0.03); the fine-tuned model learned the Tabula Sapiens convention 
 that class, fine-tuning still helps (0.965 vs 0.928), mostly on vein endothelial cells (F1 0.91 vs
 0.72). Per-class scores: `results/finetune_per_class.csv`.
 
-| Doublets | Phantom clusters | Doublets in phantom clusters | Doublets near a parent type |
-|---|---|---|---|
-| 6L zero-shot | 1 (137 cells, 69% doublets) | 9.3% | 78.9% |
-| 6L fine-tuned | 2 (268 and 99 cells) | **23.4%** | 79.0% |
+| 6L embedding | Artefact | Phantom clusters | Artefacts in phantom clusters | Detectability (AUROC) | kNN enrichment |
+|---|---|---|---|---|---|
+| zero-shot | doublet | 1 (137 cells, 69% doublets) | 9.3% | 0.951 | 8.8 |
+| fine-tuned | doublet | 2 (268 and 99 cells) | **23.4%** | 0.949 | 7.4 |
+| zero-shot | ambient | 0 | 0.0% | 0.964 | 7.3 |
+| fine-tuned | ambient | 0 | 0.0% | **0.914** | **3.9** |
 
 **Fine-tuning on cell types made doublets look more like cell types.** The fine-tuned embedding forms
 two doublet-dominated clusters, stromal + endothelial and stromal + immune pairs, against one before.
 A classifier trained to separate labelled types sharpens the space, and heterotypic doublets become
 compact groups of their own.
+
+**It also made ambient-contaminated cells harder to find.** Neither 6L embedding builds an ambient
+cluster, but after fine-tuning the contaminated cells are less detectable (AUROC 0.964 to 0.914) and
+sit less often next to each other (kNN enrichment 7.3 to 3.9): the model places them with their own
+cell type, which helps classification and hides the contamination. Fine-tuning improved the
+classifier without making the embedding more robust to either artefact.
 
 The scib scores of the fine-tuned embedding (total 0.597) are not comparable with the other
 embeddings: bio conservation uses the same cell-type labels the model was trained on.
